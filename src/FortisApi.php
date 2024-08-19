@@ -326,8 +326,10 @@ class FortisApi
     }
 
     /**
-     * @param $transaction amount int * 100
+     * @param $transaction_amount
      * @param $token_id
+     * @param $order_id
+     * @param int $tax_amount
      *
      * @return string
      */
@@ -379,14 +381,24 @@ class FortisApi
         return $status;
     }
 
-    public function refund($transaction_id, $transaction_amount)
+    /**
+     * Refund a credit card transaction
+     *
+     * @param $transaction_id
+     * @param $transaction_amount
+     * @param $description
+     *
+     * @return int|string
+     */
+    public function refund($transaction_id, $transaction_amount, $description = '')
     {
         $status = '3';
 
         if ($transaction_id != '') {
             $intentData = [
                 'previous_transaction_id' => $transaction_id,
-                'transaction_amount'      => $transaction_amount
+                'transaction_amount'      => $transaction_amount,
+                'description'             => $description,
             ];
 
 
@@ -399,6 +411,53 @@ class FortisApi
         }
 
         return $status;
+    }
+
+    /**
+     * Refund an ach transaction
+     *
+     * @param $transaction_id
+     * @param $transaction_amount
+     * @param $description
+     *
+     * @return mixed
+     */
+    public function refundAch($transaction_id, $transaction_amount, $description = ''): mixed
+    {
+        if ($transaction_id != '') {
+            $intentData = [
+                'previous_transaction_id' => $transaction_id,
+                'transaction_amount'      => $transaction_amount,
+                'description'             => $description,
+            ];
+
+            $this->result      = $this->post($intentData, "/v1/transactions/ach/refund/prev-trxn");
+            $this->transaction = json_decode($this->result);
+        }
+
+        return $this->transaction;
+    }
+
+    /**
+     * Void a transaction
+     *
+     * @param $transaction_id
+     * @param $description
+     *
+     * @return mixed
+     */
+    public function void($transaction_id, $description = ''): mixed
+    {
+        if ($transaction_id != '') {
+            $intentData = [
+                'description' => $description,
+            ];
+
+            $this->result      = $this->put($intentData, "/v1/transactions/$transaction_id/void");
+            $this->transaction = json_decode($this->result);
+        }
+
+        return $this->transaction;
     }
 
     public function createAchPostback($url, $transaction_id)
@@ -426,6 +485,19 @@ class FortisApi
     public function tokenCCUpdate(array $intentData, string $tokenID)
     {
         return $this->patch($intentData, "/v1/tokens/$tokenID/cc");
+    }
+
+    /**
+     * Complete (capture) a previously authorised transaction
+     *
+     * @param array $intentData
+     * @param string $transactionID
+     *
+     * @return bool|string|null
+     */
+    public function completeAuthTransaction(array $intentData, string $transactionID): bool|string|null
+    {
+        return $this->patch($intentData, "/v1/transactions/$transactionID/auth-complete");
     }
 
     public function tokenCCDelete(string $tokenID)
