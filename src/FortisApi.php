@@ -54,6 +54,8 @@ class FortisApi
     public const FONTSIZE                      = 'fontSize';
     public const MARGINSPACING                 = 'marginSpacing';
     public const BORDERRADIUS                  = 'borderRadius';
+    public const LOGOURL                       = 'logoUrl';
+    public const ADDITIONALTEXT                = 'additionalText';
 
     public $user_id;
     public $user_api_key;

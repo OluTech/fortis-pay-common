@@ -2,13 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.2.0] - 2024-08-19
+## [[0.3.0]](https://github.com/OluTech/fortis-pay-common/releases/tag/0.3.0)
 
-- Extend refund method to allow for description parameter.
-- Add refundAch method.
-- Add void method.
-- Add completeAuthTransaction method.
+### Fixed
 
-## [v0.1.0] - 2024-08-01
+- Add missing constants used in generating iFrame.
+
+## [[0.2.0]](https://github.com/OluTech/fortis-pay-common/releases/tag/0.2.0)
+
+### Added
+
+- Refund method now supports a description parameter.
+- `refundAch` method.
+- `void` method.
+- `completeAuthTransaction` method.
+
+## [[0.1.0]](https://github.com/OluTech/fortis-pay-common/releases/tag/0.1.0)
+
+### Added
 
 - Initial release.
