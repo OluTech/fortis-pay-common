@@ -372,9 +372,9 @@ class FortisApi
             $transactionResult = $this->post($intentData, "/v1/transactions/cc/auth-only/token");
         }
 
-        $this->transaction = json_decode($transactionResult, true)['data'];
+        $this->transaction = json_decode($transactionResult, true)['data'] ?? null;
         $this->result      = $this->transaction;
-        if ($this->transaction['id']) {
+        if ($this->transaction && $this->transaction['id']) {
             $status = $this->checkStatus($this->transaction['status_code']);
         } else {
             $status = '2';
