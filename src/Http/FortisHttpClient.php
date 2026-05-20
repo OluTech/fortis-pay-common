@@ -194,7 +194,7 @@ class FortisHttpClient
         }
 
         try {
-            $settled = \GuzzleHttp\Promise\Utils::settle($promises)->wait();
+            $settled   = \GuzzleHttp\Promise\Utils::settle($promises)->wait();
             $responses = [];
 
             foreach ($settled as $key => $result) {
@@ -210,9 +210,9 @@ class FortisHttpClient
             return $responses;
         } catch (\Throwable $e) {
             $this->logger->error('Promise settlement failed', [
-                'error'            => $e->getMessage(),
-                'promise_count'    => count($promises),
-                'exception_class'  => get_class($e),
+                'error'           => $e->getMessage(),
+                'promise_count'   => count($promises),
+                'exception_class' => get_class($e),
             ]);
 
             // Return error responses for each promise instead of crashing
