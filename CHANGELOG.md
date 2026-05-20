@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [[1.0.1]](https://github.com/OluTech/fortis-pay-common/releases/tag/1.0.1)
+
+### Added
+
+#### API Methods
+
+- `getLocationProductTransactions()` - Retrieve product transactions for the configured location with expanded details.
+- `getTokenStorage()` - Public accessor for the token storage instance.
+
+#### Configuration
+
+- `isGooglepayEnabled()` method added to `ConfigProviderInterface`.
+- `isApplepayEnabled()` method added to `ConfigProviderInterface`.
+
+### Changed
+
+#### Token Storage
+
+- `TokenStorageInterface::vaultCard()` now returns `string[]` (array of deleted duplicate Fortis token IDs) instead of
+  `void`.
+- `vaultCard()` is now responsible for removing duplicates before storing, returning deleted token IDs for API-level
+  cleanup by the caller.
+
+#### Configuration Keys (Documentation)
+
+- Renamed `sandbox_api_key` to `sandbox_user_api_key` for clarity.
+- Renamed `production_api_key` to `production_user_api_key` for clarity.
+
+#### Documentation
+
+- Simplified PSR-17 factory usage in README: recommend `GuzzleHttp\Psr7\HttpFactory` (implements both
+  `RequestFactoryInterface` and `StreamFactoryInterface`) instead of separate `Http\Factory\Guzzle\RequestFactory` and
+  `Http\Factory\Guzzle\StreamFactory`.
+
 ## [[1.0.0]](https://github.com/OluTech/fortis-pay-common/releases/tag/1.0.0)
 
 **Major Release:** Platform-Agnostic PSR-Compliant Refactoring.

@@ -49,6 +49,10 @@ interface ConfigProviderInterface
 
     public function isLevel3Enabled(): bool;
 
+    public function isGooglepayEnabled(): bool;
+
+    public function isApplepayEnabled(): bool;
+
     /**
      * Get an arbitrary configuration value by key.
      */

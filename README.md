@@ -47,7 +47,6 @@ This is the central gateway for integrating with the Fortis Payment API. It is p
 This is an example framework-specific adapter that shows how to adapt the Fortis Common Library to a particular
 framework.
 
-
 ## Platform Adapters
 
 The Fortis Common Library requires platform-specific adapter implementations to function. These are provided via two
@@ -63,12 +62,12 @@ The `ConfigProviderInterface` must be implemented to provide Fortis API credenti
 
 - `environment`: `'sandbox'` or `'production'` (default: sandbox)
 - `sandbox_user_id`: Sandbox Fortis user ID
-- `sandbox_api_key`: Sandbox Fortis API key
+- `sandbox_user_api_key`: Sandbox Fortis API key
 - `sandbox_location_id`: Sandbox Fortis location ID
 - `sandbox_product_id_cc`: Sandbox product ID for credit cards
 - `sandbox_product_id_ach`: Sandbox product ID for ACH
 - `production_user_id`: Production Fortis user ID
-- `production_api_key`: Production Fortis API key
+- `production_user_api_key`: Production Fortis API key
 - `production_location_id`: Production Fortis location ID
 - `production_product_id_cc`: Production product ID for credit cards
 - `production_product_id_ach`: Production product ID for ACH
@@ -112,7 +111,7 @@ use App\Fortis\Adapters\ConfigProvider;
 $config = [
     'environment' => 'sandbox',
     'sandbox_user_id' => 'user_abc123',
-    'sandbox_api_key' => 'key_xyz789',
+    'sandbox_user_api_key' => 'key_xyz789',
     'sandbox_location_id' => 'loc_123',
     'sandbox_product_id_cc' => 'prod_cc_123',
     'sandbox_product_id_ach' => 'prod_ach_456',
@@ -220,6 +219,7 @@ public function __construct(
 ```
 
 **Parameters:**
+
 - `$httpClient` (PSR-18): Any PSR-18 compliant HTTP client (GuzzleHttp recommended)
 - `$requestFactory` (PSR-17): For creating HTTP request objects
 - `$streamFactory` (PSR-17): For creating HTTP stream bodies
@@ -230,8 +230,7 @@ public function __construct(
 
 ```php
 use GuzzleHttp\Client as GuzzleClient;
-use Http\Factory\Guzzle\RequestFactory;
-use Http\Factory\Guzzle\StreamFactory;
+use GuzzleHttp\Psr7\HttpFactory;
 use Monolog\Logger;
 use Monolog\Handlers\StreamHandler;
 
@@ -240,18 +239,21 @@ $logger = new Logger('fortis');
 $logger->pushHandler(new StreamHandler('php://stderr'));
 
 // Create HTTP client and factories
+// GuzzleHttp\Psr7\HttpFactory implements both PSR-17 interfaces (RequestFactory + StreamFactory)
 $httpClient = new GuzzleClient();
-$requestFactory = new RequestFactory();
-$streamFactory = new StreamFactory();
+$httpFactory = new HttpFactory();
 
 // Create FortisHttpClient
 $fortisHttpClient = new FortisHttpClient(
     $httpClient,
-    $requestFactory,
-    $streamFactory,
+    $httpFactory,  // implements RequestFactoryInterface
+    $httpFactory,  // implements StreamFactoryInterface
     $logger
 );
 ```
+
+> **Alternative**: You can use separate `Http\Factory\Guzzle\RequestFactory` and `Http\Factory\Guzzle\StreamFactory`
+> classes if you prefer, but `GuzzleHttp\Psr7\HttpFactory` is simpler as it implements both PSR-17 interfaces.
 
 ## Breaking Changes from 0.x.x
 
@@ -279,22 +281,22 @@ $api = new FortisApi($configProvider, $httpClient, $logger, $tokenStorage);
 ### Migration Steps
 
 1. **Copy adapter examples to your platform repository:**
-   - Copy `examples/ConfigProvider.php` to your platform repository
-   - Copy `examples/TokenStorage.php` to your platform repository
+    - Copy `examples/ConfigProvider.php` to your platform repository
+    - Copy `examples/TokenStorage.php` to your platform repository
 
 2. **Implement platform-specific adapters:**
-   - Extend `ConfigProviderInterface` to load configuration from your platform's system
-   - Extend `TokenStorageInterface` to store/retrieve tokens using your platform's storage
-   - See "Platform Adapters" section below for details
+    - Extend `ConfigProviderInterface` to load configuration from your platform's system
+    - Extend `TokenStorageInterface` to store/retrieve tokens using your platform's storage
+    - See "Platform Adapters" section below for details
 
 3. **Update initialization:**
-   - Create instances of your ConfigProvider and TokenStorage
-   - Create FortisHttpClient with PSR-18/PSR-7 dependencies
-   - Create FortisApi with these instances
+    - Create instances of your ConfigProvider and TokenStorage
+    - Create FortisHttpClient with PSR-18/PSR-7 dependencies
+    - Create FortisApi with these instances
 
 4. **Update all FortisApi instantiation code:**
-   - Old: `$api = new FortisApi($id, $config_data);`
-   - New: `$api = new FortisApi($configProvider, $httpClient, $logger, $tokenStorage);`
+    - Old: `$api = new FortisApi($id, $config_data);`
+    - New: `$api = new FortisApi($configProvider, $httpClient, $logger, $tokenStorage);`
 
 ### Why This Matters
 

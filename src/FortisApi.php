@@ -95,6 +95,11 @@ class FortisApi
     protected LoggerInterface $logger;
     protected string $developerId;
 
+    public function getTokenStorage(): TokenStorageInterface
+    {
+        return $this->tokenStorage;
+    }
+
     public function __construct(
         ConfigProviderInterface $config,
         FortisHttpClient $httpClient,
@@ -158,11 +163,11 @@ class FortisApi
         } catch (\Throwable $e) {
             $result['message'] = 'Level 3 processing failed: ' . $e->getMessage();
             $this->logger->error('Level 3 processing error', [
-                'transaction_id' => $transactionId,
-                'card_type'      => $cardType,
+                'transaction_id'  => $transactionId,
+                'card_type'       => $cardType,
                 'exception_class' => get_class($e),
-                'error'          => $e->getMessage(),
-                'trace'          => $e->getTraceAsString(),
+                'error'           => $e->getMessage(),
+                'trace'           => $e->getTraceAsString(),
             ]);
         }
 
@@ -467,12 +472,12 @@ class FortisApi
             $result['message'] = "{$cardType} Level 3 failed: " . $e->getMessage();
 
             $this->logger->error("{$cardType} Level 3 processing failed", [
-                'transaction_id' => $transactionId,
+                'transaction_id'  => $transactionId,
                 'exception_class' => get_class($e),
-                'error'          => $e->getMessage(),
-                'sent_data'      => $sentData,
-                'response'       => $response,
-                'trace'          => $e->getTraceAsString(),
+                'error'           => $e->getMessage(),
+                'sent_data'       => $sentData,
+                'response'        => $response,
+                'trace'           => $e->getTraceAsString(),
             ]);
         }
 
@@ -639,9 +644,9 @@ class FortisApi
         } catch (\Throwable $e) {
             $this->logger->error('Error finding original transaction ID', [
                 'refund_transaction_id' => $refundTransactionId,
-                'exception_class' => get_class($e),
+                'exception_class'       => get_class($e),
                 'error'                 => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace'                 => $e->getTraceAsString(),
             ]);
 
             return null;
@@ -940,6 +945,53 @@ class FortisApi
     public function tokenCCUpdate(array $intentData, string $tokenID): string
     {
         return $this->patch($intentData, "/v1/tokens/$tokenID/cc");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Locations
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Get product transactions for the configured location.
+     *
+     * Returns the location details with expanded product_transactions array.
+     *
+     * @return array{success: bool, message: string|null, statusCode: int|null, response: array|null, endpoint: string}
+     */
+    public function getLocationProductTransactions(): array
+    {
+        $endpoint = '/v1/locations/' . $this->location_id . '?expand=product_transactions';
+        $result   = $this->callAPIWithDetails('GET', [], $endpoint);
+
+        if (!$result['success']) {
+            return [
+                'success'    => false,
+                'message'    => $result['message'],
+                'statusCode' => $result['statusCode'],
+                'response'   => $result['response'],
+                'endpoint'   => $endpoint,
+            ];
+        }
+
+        $response = $result['response'];
+
+        if (!isset($response['data']['product_transactions']) || !is_array($response['data']['product_transactions'])) {
+            return [
+                'success'    => false,
+                'message'    => 'Product transactions not found in response',
+                'statusCode' => $result['statusCode'],
+                'response'   => $response,
+                'endpoint'   => $endpoint,
+            ];
+        }
+
+        return [
+            'success'    => true,
+            'message'    => null,
+            'statusCode' => $result['statusCode'],
+            'response'   => $response,
+            'endpoint'   => $endpoint,
+        ];
     }
 
     // ═══════════════════════════════════════════════════════════════════

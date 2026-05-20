@@ -21,13 +21,15 @@ interface TokenStorageInterface
     public function getPaymentTypeById(string $id): ?string;
 
     /**
-     * Store a new vaulted card/payment method.
+     * Store a new vaulted card/payment method, removing any duplicates first.
      *
      * @param string $tokenId Fortis token ID
      * @param array $cardData Card data from Fortis (first_six, last_four, payment_method, etc.)
      * @param string $customerId Platform customer ID
+     *
+     * @return string[] Fortis token IDs that were deleted as duplicates (for API-level cleanup by caller)
      */
-    public function vaultCard(string $tokenId, array $cardData, string $customerId): void;
+    public function vaultCard(string $tokenId, array $cardData, string $customerId): array;
 
     /**
      * Delete a stored token by platform vault ID.
