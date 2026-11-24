@@ -78,6 +78,14 @@ The `ConfigProviderInterface` must be implemented to provide Fortis API credenti
 - `vault_enabled`: boolean (default: false)
 - `level3_enabled`: boolean (default: false)
 
+**Optional Configuration Keys (alternative payment methods: PayPal/Venmo):**
+
+These are read through `get()`, so a platform without them needs nothing extra.
+
+- `apm_enabled`: boolean (default: false)
+- `sandbox_product_id_apm`: Sandbox product ID for alternative payment methods
+- `production_product_id_apm`: Production product ID for alternative payment methods
+
 **Required Methods:**
 
 ```php
@@ -203,6 +211,13 @@ When implementing TokenStorage for production, consider:
 - **Access Control**: Restrict token access to authorized users only
 - **Backup Strategy**: Plan for token recovery and backups
 - **PCI Compliance**: Ensure compliance with payment card industry standards
+
+## Results
+
+`checkStatus($statusCode, $reasonCodeId = null)` maps a gateway status to a result, and `doTokenisedTransaction()` and
+`refund()` return it: `1` successful, `2` declined or voided, `5` awaiting a result (a PayPal/Venmo payment not yet
+completed), `3` anything else. `FortisApi::resolveStatusCode($transaction)` reads the status from `status_code`, or from
+`status_id` where the gateway sends it there.
 
 ## FortisHttpClient Constructor
 
