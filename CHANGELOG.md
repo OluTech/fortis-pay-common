@@ -1,6 +1,49 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [[1.0.2]](https://github.com/OluTech/fortis-pay-common/releases/tag/1.0.2)
+
+### Fixed
+
+- A saved bank account is now always debited as a sale (`/v1/transactions/ach/debit/token`), and sent with
+  `ach_sec_code: 'WEB'`. Before, a store set to authorise only posted to `/v1/transactions/ach/auth-only/token`, which
+  Fortis answers with 404.
+- A client token asked for a bank form alone is now a sale, even when the store authorises only. Fortis answers 424 to an
+  auth-only intention for ACH alone.
+- `refund()` and `doTokenisedTransaction()` read the status from `status_code` or, where the gateway sends it there
+  (PayPal/Venmo), from `status_id`.
+
+### Added
+
+#### API Methods
+
+- `tokenCreateFromTransaction()` - Create a token from a completed transaction (`POST /v1/tokens/previous-transaction`).
+- `FortisApi::postbackAlreadyActive()` - Whether Fortis refused a postback because the same one is already active.
+- `FortisApi::resolveStatusCode()` and `FortisApi::isPayPalVenmo()` - Read a transaction's status, and tell PayPal/Venmo
+  transactions.
+- `buildClientTokenIntent()` and `parseClientTokenResponse()` (protected) - What a client token asks Fortis for, and how its answer is
+  read, so that a platform whose checkout asks for something different can adjust them.
+
+#### Parameters
+
+- `getClientToken()` takes an optional trailing `$contactId`; `doTokenisedTransaction()` takes optional trailing
+  `$contactId`. Both are sent as `contact_id` when given.
+- `checkStatus()` takes an optional `$reasonCodeId`.
+
+#### Alternative payment methods (PayPal/Venmo)
+
+- Optional: `apm_enabled`, `sandbox_product_id_apm` and `production_product_id_apm` are read through
+  `ConfigProviderInterface::get()`, so `ConfigProviderInterface` is unchanged. When enabled and given a product, the
+  client token offers an `apm` method (never together with a bank form alone).
+- `checkStatus()` maps status 151 (sale: 4003 completed = 1, 4002 declined = 2, anything else = 5), 152 (order started =
+  5) and 161 (refunded = 1). 5 means awaiting a result; no other status returns it.
+- New public `$product_id_apm`, and constants `APM`, `SANDBOX_PRODUCT_ID_APM`, `PRODUCTION_PRODUCT_ID_APM`.
+
+### Changed
+
+#### Tokenised Transactions
+
+- `doTokenisedTransaction()` and `refund()` pass the transaction's `reason_code_id` to `checkStatus()`, and may now
+  return 5 (awaiting a result) for a PayPal/Venmo payment that has not yet completed.
 
 ## [[1.0.1]](https://github.com/OluTech/fortis-pay-common/releases/tag/1.0.1)
 

@@ -37,6 +37,9 @@ class FortisApi
     public const APPLEPAY                      = 'applepay';
     public const GOOGLEPAY                     = 'googlepay';
     public const ENVIRONMENT                   = 'environment';
+    public const APM                           = 'apm_enabled';
+    public const PRODUCTION_PRODUCT_ID_APM     = 'production_product_id_apm';
+    public const SANDBOX_PRODUCT_ID_APM        = 'sandbox_product_id_apm';
     public const PRODUCTION_HOST_DOMAIN        = 'production_host_domain';
     public const PRODUCTION_USER_ID            = 'production_user_id';
     public const PRODUCTION_USER_API_KEY       = 'production_user_api_key';
@@ -83,6 +86,7 @@ class FortisApi
     public string $location_id;
     public ?string $product_id_cc = null;
     public ?string $product_id_ach = null;
+    public ?string $product_id_apm = null;
     public string $action;
     public $result;
     public ?string $transactionType = null;
@@ -123,6 +127,33 @@ class FortisApi
         if ($config->isACHEnabled()) {
             $this->product_id_ach = $config->getProductIdACH();
         }
+        if ($this->isApmEnabled()) {
+            $this->product_id_apm = $this->getApmProductId();
+        }
+    }
+
+    /**
+     * Whether alternative payment methods (PayPal/Venmo) are switched on. They are optional: read through
+     * ConfigProviderInterface::get() with the 'apm_enabled' key, so that a platform that has no such setting needs
+     * nothing from its config provider.
+     */
+    protected function isApmEnabled(): bool
+    {
+        return (bool)$this->config->get(self::APM, false);
+    }
+
+    /**
+     * The product transaction ID for alternative payment methods in the configured environment, if any.
+     */
+    protected function getApmProductId(): ?string
+    {
+        $key = $this->config->getEnvironment() === 'production'
+            ? self::PRODUCTION_PRODUCT_ID_APM
+            : self::SANDBOX_PRODUCT_ID_APM;
+
+        $productId = $this->config->get($key);
+
+        return is_string($productId) && $productId !== '' ? $productId : null;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -491,10 +522,42 @@ class FortisApi
     /**
      * Get a client token for the payment form.
      *
+     * @param string|null $contactId The Fortis contact of the signed-in customer, when there is one
+     *
      * @return mixed String token on success, array with 'error' key on failure
      */
-    public function getClientToken($total, $tax_amount, $saveAccount, $useAccount, $method = null): mixed
-    {
+    public function getClientToken(
+        $total,
+        $tax_amount,
+        $saveAccount,
+        $useAccount,
+        $method = null,
+        $contactId = null
+    ): mixed {
+        $intentData = $this->buildClientTokenIntent($total, $tax_amount, $saveAccount, $method, $contactId);
+
+        if (empty($intentData['methods'])) {
+            return ['error' => 'No payment methods are enabled or configured.'];
+        }
+
+        return $this->parseClientTokenResponse(json_decode($this->post($intentData, '/v1/elements/transaction/intention')));
+    }
+
+    /**
+     * What Fortis is asked for to make a client token (see getClientToken()).
+     *
+     * Protected so that a platform whose checkout asks for something different can adjust it.
+     *
+     * @param string|null $method    'cc' or 'ach' for a form of that kind alone, null for every enabled kind
+     * @param string|null $contactId The Fortis contact of the signed-in customer, when there is one
+     */
+    protected function buildClientTokenIntent(
+        $total,
+        $tax_amount,
+        $saveAccount,
+        $method = null,
+        $contactId = null
+    ): array {
         $intentData = [
             'action'       => $this->action,
             'amount'       => (int)$total,
@@ -504,52 +567,59 @@ class FortisApi
         ];
 
         $intentData['tax_amount'] = max((int)$tax_amount, 1);
-        $intentData['methods']    = [];
 
-        if ($method === 'cc') {
-            if ($this->config->isCCEnabled() && $this->product_id_cc) {
-                $intentData['methods'][] = [
-                    'type'                   => 'cc',
-                    'product_transaction_id' => $this->product_id_cc,
-                ];
-            }
-        } elseif ($method === 'ach') {
-            if ($this->config->isACHEnabled() && isset($this->product_id_ach)) {
-                $intentData['methods'][] = [
-                    'type'                   => 'ach',
-                    'product_transaction_id' => $this->product_id_ach,
-                ];
-            }
-        } else {
-            if ($this->config->isCCEnabled() && $this->product_id_cc) {
-                $intentData['methods'][] = [
-                    'type'                   => 'cc',
-                    'product_transaction_id' => $this->product_id_cc,
-                ];
-            }
-            if ($this->config->isACHEnabled() && isset($this->product_id_ach)) {
-                $intentData['methods'][] = [
-                    'type'                   => 'ach',
-                    'product_transaction_id' => $this->product_id_ach,
-                ];
-            }
+        if ($contactId) {
+            $intentData['contact_id'] = $contactId;
         }
 
-        if (empty($intentData['methods'])) {
-            return ['error' => 'No payment methods are enabled or configured.'];
+        $intentData['methods'] = [];
+
+        if ($method !== 'ach' && $this->config->isCCEnabled() && $this->product_id_cc) {
+            $intentData['methods'][] = [
+                'type'                   => 'cc',
+                'product_transaction_id' => $this->product_id_cc,
+            ];
+        }
+        if ($method !== 'cc' && $this->config->isACHEnabled() && isset($this->product_id_ach)) {
+            $intentData['methods'][] = [
+                'type'                   => 'ach',
+                'product_transaction_id' => $this->product_id_ach,
+            ];
+        }
+        if ($method !== 'ach' && $this->isApmEnabled() && !empty($this->product_id_apm)) {
+            $intentData['methods'][] = [
+                'type'                   => 'apm',
+                'product_transaction_id' => $this->product_id_apm,
+            ];
         }
 
-        $response = json_decode($this->post($intentData, '/v1/elements/transaction/intention'));
-
-        if (!isset($response->data->client_token)) {
-            if (isset($response?->type) && $response->type === 'Error') {
-                return ['error' => $response?->detail];
-            }
-
-            return ['error' => 'An unknown error occurred'];
+        // A bank account can only be debited: Fortis has no authorise-only for ACH and answers a bank form asked for
+        // with auth-only with 424 "This payment method is not allowed for auth-only". The bank form is therefore a
+        // sale, even when the store authorises card payments only.
+        $types = array_column($intentData['methods'], 'type');
+        if ($types && array_unique($types) === ['ach']) {
+            $intentData['action'] = 'sale';
         }
 
-        return $response->data->client_token;
+        return $intentData;
+    }
+
+    /**
+     * The client token in Fortis's answer, or the error to show instead (see getClientToken()).
+     *
+     * @return mixed String token on success, array with 'error' key on failure
+     */
+    protected function parseClientTokenResponse($response): mixed
+    {
+        if (isset($response->data->client_token)) {
+            return $response->data->client_token;
+        }
+
+        if (isset($response?->type) && $response->type === 'Error') {
+            return ['error' => $response?->detail];
+        }
+
+        return ['error' => 'An unknown error occurred'];
     }
 
     public function getPaymentMethodToken(): string
@@ -673,12 +743,22 @@ class FortisApi
     }
 
     /**
-     * Process a tokenised (saved card) transaction.
+     * Process a tokenised (saved card or bank account) transaction.
      *
-     * @return int Status code (1 = approved, 2 = pending, 3 = error)
+     * A saved bank account is always debited, as a sale, whatever the configured action is: Fortis has no
+     * authorise-only for ACH (POST /v1/transactions/ach/auth-only/token answers 404 "Route not found").
+     *
+     * @param string|null $contactId The Fortis contact of the signed-in customer, when there is one
+     *
+     * @return int Status code (1 = approved, 2 = pending, 3 = error, 5 = awaiting a result)
      */
-    public function doTokenisedTransaction($transaction_amount, $tax_amount, $token_id, $surchargeInfo = null): int
-    {
+    public function doTokenisedTransaction(
+        $transaction_amount,
+        $tax_amount,
+        $token_id,
+        $surchargeInfo = null,
+        $contactId = null
+    ): int {
         $token = $this->tokenStorage->getTokenById($token_id);
         if ($token === null) {
             $this->logger->error('doTokenisedTransaction: Token not found for vault ID: ' . $token_id);
@@ -700,30 +780,32 @@ class FortisApi
             'subtotal_amount'        => $subtotal_amount,
         ];
 
+        if ($this->paymentMethod === 'ach') {
+            $intentData['ach_sec_code'] = 'WEB';
+        }
+
+        if ($contactId) {
+            $intentData['contact_id'] = $contactId;
+        }
+
         if ($surchargeInfo) {
             $intentData['subtotal_amount']    = $surchargeInfo['subtotal'];
             $intentData['surcharge_amount']   = $surchargeInfo['surchargeAmount'];
             $intentData['transaction_amount'] = $surchargeInfo['totalAmount'];
         }
 
-        if ($this->action === 'sale') {
+        if ($this->paymentMethod === 'ach') {
+            $this->action          = 'sale';
             $this->transactionType = 'sale';
-            if ($this->paymentMethod === 'ach') {
-                $transactionResult   = $this->post($intentData, '/v1/transactions/ach/debit/token');
-                $this->paymentMethod = 'ach';
-            } else {
-                $transactionResult   = $this->post($intentData, '/v1/transactions/cc/sale/token');
-                $this->paymentMethod = 'token';
-            }
+            $transactionResult     = $this->post($intentData, '/v1/transactions/ach/debit/token');
+        } elseif ($this->action === 'sale') {
+            $this->transactionType = 'sale';
+            $transactionResult     = $this->post($intentData, '/v1/transactions/cc/sale/token');
+            $this->paymentMethod   = 'token';
         } else {
             $this->transactionType = 'auth-only';
-            if ($this->paymentMethod === 'ach') {
-                $transactionResult   = $this->post($intentData, '/v1/transactions/ach/auth-only/token');
-                $this->paymentMethod = 'ach';
-            } else {
-                $transactionResult   = $this->post($intentData, '/v1/transactions/cc/auth-only/token');
-                $this->paymentMethod = 'token';
-            }
+            $transactionResult     = $this->post($intentData, '/v1/transactions/cc/auth-only/token');
+            $this->paymentMethod   = 'token';
         }
 
         $this->result      = json_decode(stripslashes($transactionResult));
@@ -734,7 +816,10 @@ class FortisApi
         }
 
         if (isset($this->transaction) && $this->transaction->id) {
-            return $this->checkStatus($this->transaction->status_code);
+            return $this->checkStatus(
+                self::resolveStatusCode($this->transaction),
+                $this->transaction->reason_code_id ?? null
+            );
         }
 
         return 3;
@@ -760,7 +845,10 @@ class FortisApi
             $this->transaction = json_decode($this->result);
 
             if ($this->transaction->type == 'Transaction') {
-                $status = $this->checkStatus($this->transaction->data->status_code);
+                $status = $this->checkStatus(
+                    self::resolveStatusCode($this->transaction->data),
+                    $this->transaction->data->reason_code_id ?? null
+                );
             }
         }
 
@@ -927,6 +1015,33 @@ class FortisApi
         return $this->get([], "/v1/tokens/$tokenID");
     }
 
+    /**
+     * Create a token from a previous transaction.
+     * API: POST /v1/tokens/previous-transaction
+     *
+     * @param string $transactionId     The ID of the completed transaction
+     * @param string $locationId        The location ID from the transaction
+     * @param string $accountHolderName Name on the account/card
+     *
+     * @return string The created token response
+     */
+    public function tokenCreateFromTransaction(
+        string $transactionId,
+        string $locationId,
+        string $accountHolderName = ''
+    ): string {
+        $intentData = [
+            'previous_transaction_id' => $transactionId,
+            'location_id'             => $locationId,
+        ];
+
+        if ($accountHolderName !== '') {
+            $intentData['account_holder_name'] = $accountHolderName;
+        }
+
+        return $this->post($intentData, '/v1/tokens/previous-transaction');
+    }
+
     public function tokenDelete(string $tokenID): string
     {
         return $this->delete([], "/v1/tokens/$tokenID");
@@ -1080,6 +1195,28 @@ class FortisApi
         ];
     }
 
+    /**
+     * Whether Fortis refused a postback (see createTransactionPostbackWithDetails()) because one for the same address,
+     * product and location is already active. That postback calls the app, so it is as good as created. It happens
+     * when the app no longer knows the postback's id: two saves of the settings at the same moment, for example.
+     *
+     * @param array $result The array createTransactionPostbackWithDetails() returns
+     */
+    public static function postbackAlreadyActive(array $result): bool
+    {
+        if (($result['statusCode'] ?? null) !== 422) {
+            return false;
+        }
+
+        foreach ((array)($result['response']['meta']['errors']['url'] ?? []) as $error) {
+            if (is_string($error) && stripos($error, 'already an active postback') !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function deleteTransactionPostback(string $webHookId): string
     {
         return $this->delete([], "/v1/webhooks/$webHookId");
@@ -1100,13 +1237,67 @@ class FortisApi
     //  Status Mapping
     // ═══════════════════════════════════════════════════════════════════
 
-    public function checkStatus($statusCode): int
+    /**
+     * Map a gateway status to a result: 1 = successful, 2 = declined/voided, 5 = awaiting a result (a PayPal/Venmo
+     * payment not yet completed), 3 = anything else.
+     *
+     * @param mixed $statusCode
+     * @param mixed $reasonCodeId What a PayPal/Venmo sale needs to tell completed from pending (see
+     *                            resolveStatusCode() for where the status comes from)
+     */
+    public function checkStatus($statusCode, $reasonCodeId = null): int
     {
-        return match ((int)$statusCode) {
+        // Compare numbers as numbers: the PayPal/Venmo checks below are strict.
+        $statusCode   = is_numeric($statusCode) ? (int)$statusCode : $statusCode;
+        $reasonCodeId = is_numeric($reasonCodeId) ? (int)$reasonCodeId : null;
+
+        return match ($statusCode) {
             101, 102, 111, 131, 132, 133, 134 => 1,
             201, 301, 331 => 2,
+            // PayPal/Venmo sale: only reason_code_id 4003 (Completed) is a real success; 4002 is declined; pending
+            // (4001) or an unknown reason is not assumed to be a success.
+            151 => match ($reasonCodeId) {
+                4003    => 1,
+                4002    => 2,
+                default => 5,
+            },
+            152 => 5, // PayPal/Venmo order started: never a completed sale
+            161 => 1, // PayPal/Venmo refunded
             default => 3,
         };
+    }
+
+    /**
+     * The gateway returns the transaction status as status_code on card transactions and as status_id on others
+     * (for example PayPal/Venmo), so read whichever is present.
+     *
+     * @param object|null $transaction
+     */
+    public static function resolveStatusCode($transaction): ?int
+    {
+        $value = $transaction->status_code ?? $transaction->status_id ?? null;
+
+        return is_numeric($value) ? (int)$value : null;
+    }
+
+    /**
+     * Whether a gateway transaction was taken through PayPal or Venmo.
+     *
+     * @param object|null $transaction
+     */
+    public static function isPayPalVenmo($transaction): bool
+    {
+        if (!is_object($transaction)) {
+            return false;
+        }
+
+        foreach ([$transaction->payment_method ?? null, $transaction->account_type ?? null] as $method) {
+            if (in_array(strtolower((string)$method), ['paypal', 'venmo'], true)) {
+                return true;
+            }
+        }
+
+        return in_array(self::resolveStatusCode($transaction), [151, 152, 161], true);
     }
 
     // ═══════════════════════════════════════════════════════════════════
